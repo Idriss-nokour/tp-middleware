@@ -21,7 +21,7 @@ func main() {
 	})
 
 	logrus.Info("[INFO] Web server started. Now listening on *:8080")
-	logrus.Fatalln(http.ListenAndServe(":8080", r))
+	logrus.Fatalln(http.ListenAndServe(":9393", r))
 }
 
 func init() {
@@ -34,6 +34,22 @@ func init() {
 			id VARCHAR(255) PRIMARY KEY NOT NULL UNIQUE,
 			content VARCHAR(255) NOT NULL
 		);`,
+
+		`CREATE TABLE IF NOT EXISTS alerts (
+			id TEXT PRIMARY KEY NOT NULL UNIQUE,   
+			email TEXT NOT NULL,                   
+			all BOOLEAN NOT NULL                  
+		);`,
+
+		`CREATE TABLE IF NOT EXISTS ressources (
+			id TEXT PRIMARY KEY NOT NULL UNIQUE,  
+			uca_id INTEGER NOT NULL,             
+			name TEXT NOT NULL                   
+		);`,
+		
+		
+
+
 	}
 	for _, scheme := range schemes {
 		if _, err := db.Exec(scheme); err != nil {
