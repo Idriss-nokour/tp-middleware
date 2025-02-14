@@ -45,7 +45,7 @@ func main() {
 		})
 	})
 
-	logrus.Info("[INFO] Web server started. Now listening on *:8080")
+	logrus.Info("[INFO] Web server started. Now listening on *:9090")
 	logrus.Fatalln(http.ListenAndServe(":9090", r))
 }
 
@@ -63,7 +63,10 @@ func init() {
 		`CREATE TABLE IF NOT EXISTS alerts (
 			id VARCHAR(255) PRIMARY KEY NOT NULL UNIQUE,
 			email VARCHAR(255) NOT NULL,
-			is_all BOOLEAN NOT NULL
+			is_all BOOLEAN NOT NULL,
+			ressource_id UUID NOT NULL,
+			CONSTRAINT fk_ressource_id FOREIGN KEY (ressource_id) REFERENCES resources(id)
+
 		);`,
 
 		`CREATE TABLE IF NOT EXISTS ressources (
