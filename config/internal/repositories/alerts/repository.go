@@ -25,7 +25,7 @@ func GetAllAlerts() ([]models.Alerts, error) {
 
 	for rows.Next() {
 		var alert models.Alerts
-		err := rows.Scan(&alert.Id, &alert.Email, &alert.All)
+		err := rows.Scan(&alert.Id, &alert.Email, &alert.IsAll)
 		if err != nil {
 			return nil, err
 		}
@@ -46,10 +46,10 @@ func GetAlertByID(id uuid.UUID) (*models.Alerts, error) {
 	}
 	defer helpers.CloseDB(db)
 
-	row := db.QueryRow("SELECT id, email, all FROM alerts WHERE id=?", id.String())
+	row := db.QueryRow("SELECT id, email, is_all FROM alerts WHERE id=?", id.String())
 
 	var alert models.Alerts
-	err = row.Scan(&alert.Id, &alert.Email, &alert.All)
+	err = row.Scan(&alert.Id, &alert.Email, &alert.IsAll)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -58,4 +58,57 @@ func GetAlertByID(id uuid.UUID) (*models.Alerts, error) {
 	}
 
 	return &alert, nil
+}
+
+func InsertAlert(alert models.Alerts) (*models.Alerts, error) {
+	db, err := helpers.OpenDB()
+	if err != nil {
+		return nil, err
+	}
+	defer helpers.CloseDB(db)
+
+	newUUID := uuid.Must(uuid.NewV4())  
+	alert.Id = &newUUID 
+
+
+	_, err = db.Exec("INSERT INTO alerts (id, email, is_all) VALUES (?, ?, ?)", alert.Id.String(), alert.Email, alert.IsAll)
+	if err != nil {
+		return nil, err
+	}
+
+	return &alert, nil
+}
+
+
+
+func UpdateAlert(id uuid.UUID, alert models.Alerts) (*models.Alerts, error) {
+	db, err := helpers.OpenDB()
+	if err != nil {
+		return nil, err
+	}
+	defer helpers.CloseDB(db)
+
+	_, err = db.Exec("UPDATE alerts SET email = ?, is_all = ? WHERE id = ?", alert.Email, alert.IsAll, id.String())
+	if err != nil {
+		return nil, err
+	}
+
+	alert.Id = &id
+	return &alert, nil
+}
+
+
+
+func DeleteAlert(id uuid.UUID) error {
+	db, err := helpers.OpenDB()
+	if err != nil {
+		return err
+	}
+	defer helpers.CloseDB(db)
+	_, err = db.Exec("DELETE FROM alerts WHERE id = ?", id.String())
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

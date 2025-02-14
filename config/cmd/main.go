@@ -4,6 +4,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/sirupsen/logrus"
 	"middleware/example/internal/controllers/collections"
+	"middleware/example/internal/controllers/ressources"
 	"middleware/example/internal/controllers/alerts"
 	"middleware/example/internal/helpers"
 	_ "middleware/example/internal/models"
@@ -22,19 +23,30 @@ func main() {
 	})
 
 	r.Route("/alerts", func(r chi.Router) {
-		r.Get("/", alerts.GetAlerts)  // GET /alerts pour obtenir toutes les alertes
-		//r.Post("/", alerts.CreateAlert) // POST /alerts pour créer une nouvelle alerte
+		r.Get("/", alerts.GetAlerts)  
+		r.Post("/", alerts.CreateAlert) 
 
 		r.Route("/{id}", func(r chi.Router) {
-			r.Use(alerts.Ctx) // Middleware pour les alertes
-			r.Get("/", alerts.GetAlert)   // GET /alerts/{id}
-			//r.Put("/", alerts.UpdateAlert) // PUT /alerts/{id}
-			//r.Delete("/", alerts.DeleteAlert) // DELETE /alerts/{id}
+			r.Use(alerts.Ctx) 
+			r.Get("/", alerts.GetAlert)   
+			r.Put("/", alerts.UpdateAlert) 
+			r.Delete("/", alerts.DeleteAlert) 
+		})
+	})
+
+	r.Route("/ressources", func(r chi.Router) {
+		r.Get("/", ressources.GetRessources)  
+		r.Post("/", ressources.CreateRessource) 
+		r.Route("/{id}", func(r chi.Router) {
+			r.Use(ressources.Ctx) 
+			r.Get("/", ressources.GetRessource)   
+			r.Put("/", ressources.UpdateRessource) 
+			r.Delete("/", ressources.DeleteRessource) 
 		})
 	})
 
 	logrus.Info("[INFO] Web server started. Now listening on *:8080")
-	logrus.Fatalln(http.ListenAndServe(":9000", r))
+	logrus.Fatalln(http.ListenAndServe(":9090", r))
 }
 
 func init() {
@@ -49,19 +61,22 @@ func init() {
 		);`,
 
 		`CREATE TABLE IF NOT EXISTS alerts (
-			id TEXT PRIMARY KEY NOT NULL UNIQUE,   
-			email TEXT NOT NULL,                   
-			is_all BOOLEAN NOT NULL                  
+			id VARCHAR(255) PRIMARY KEY NOT NULL UNIQUE,
+			email VARCHAR(255) NOT NULL,
+			is_all BOOLEAN NOT NULL
 		);`,
 
 		`CREATE TABLE IF NOT EXISTS ressources (
-			id TEXT PRIMARY KEY NOT NULL UNIQUE,  
+			id VARCHAR(255) PRIMARY KEY NOT NULL UNIQUE,
 			uca_id INTEGER NOT NULL,             
-			name TEXT NOT NULL                   
+			name VARCHAR(255) NOT NULL
 		);`,
+
 		
 		
 
+		
+		
 
 	}
 	for _, scheme := range schemes {
