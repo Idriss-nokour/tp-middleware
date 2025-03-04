@@ -1,44 +1,34 @@
 package main
 
 import (
-	"github.com/go-chi/chi/v5"
-	"github.com/sirupsen/logrus"
-	"middleware/example/internal/controllers/collections"
-	"middleware/example/internal/helpers"
-	_ "middleware/example/internal/models"
-	"net/http"
+    "log"
+    "net/http"
+	"middleware/example/internal/db"
+	"middleware/example/internal/api"
+	"middleware/example/internal/consumer"
+    "github.com/gorilla/mux"
 )
 
 func main() {
-	r := chi.NewRouter()
 
-	r.Route("/collections", func(r chi.Router) {
-		r.Get("/", collections.GetCollections)
-		r.Route("/{id}", func(r chi.Router) {
-			r.Use(collections.Ctx)
-			r.Get("/", collections.GetCollection)
-		})
-	})
+	db.InitDB()
 
-	logrus.Info("[INFO] Web server started. Now listening on *:8080")
-	logrus.Fatalln(http.ListenAndServe(":8080", r))
-}
+	consumer.InitNats()
 
-func init() {
-	db, err := helpers.OpenDB()
-	if err != nil {
-		logrus.Fatalf("error while opening database : %s", err.Error())
-	}
-	schemes := []string{
-		`CREATE TABLE IF NOT EXISTS collections (
-			id VARCHAR(255) PRIMARY KEY NOT NULL UNIQUE,
-			content VARCHAR(255) NOT NULL
-		);`,
-	}
-	for _, scheme := range schemes {
-		if _, err := db.Exec(scheme); err != nil {
-			logrus.Fatalln("Could not generate table ! Error was : " + err.Error())
-		}
-	}
-	helpers.CloseDB(db)
+	// Dans cmd/main.go
+	consumer.RunMyConsumer()
+	
+	// Lancer le serveur HTTP principal
+	//runMyServer()  
+    // Initialisation du routeur
+    router := mux.NewRouter()
+
+    // Définition des routes
+    router.HandleFunc("/events", api.GetEvents).Methods("GET")
+    router.HandleFunc("/events", api.CreateEvent).Methods("POST")
+    router.HandleFunc("/events/{id}", api.UpdateEvent).Methods("PUT")
+    router.HandleFunc("/events/{id}", api.DeleteEvent).Methods("DELETE")
+
+    // Lancer le serveur HTTP
+    log.Fatal(http.ListenAndServe(":8080", router))
 }
