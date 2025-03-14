@@ -45,7 +45,7 @@ func main() {
 	// Planifier la tâche pour récupérer et publier les événements
 	ctx := context.Background()
 	sc := scheduler.NewScheduler()
-	sc.Add(ctx, scheduled, time.Second*20)
+	sc.Add(ctx, scheduled, time.Second*30)
 
 	// Maintenir le programme actif
 	quit := make(chan os.Signal, 1)

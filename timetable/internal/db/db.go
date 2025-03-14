@@ -8,6 +8,8 @@ import (
    "time"
    "fmt" 
    "strings"
+   //"github.com/sirupsen/logrus"
+
 )
 
 var db *sql.DB
@@ -148,4 +150,16 @@ func DeleteEvent(uid string) error {
     return err
 }
 
+// Fonction pour créer une alerte dans la base de données avec sql.DB
+func CreateAlert(alert models.Alert) error {
+	
+	// Exécuter la requête avec les valeurs de l'alerte
+	_, err := db.Exec("INSERT INTO alerts (event_id, message, email, event_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)", alert.EventID, alert.Message, alert.Email, alert.EventType, time.Now(), time.Now())
+	if err != nil {
+		log.Printf("Erreur lors de la création de l'alerte: %v", err)
+		return err
+	}
 
+	log.Printf("Alerte créée avec succès pour l'evenement: %v", alert.EventID)
+	return nil
+}

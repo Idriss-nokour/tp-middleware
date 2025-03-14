@@ -7,6 +7,8 @@ import (
 	"middleware/example/internal/api"
 	"middleware/example/internal/consumer"
     "github.com/gorilla/mux"
+    "github.com/sirupsen/logrus"
+
 )
 
 func main() {
@@ -30,5 +32,6 @@ func main() {
     router.HandleFunc("/events/{id}", api.DeleteEvent).Methods("DELETE")
 
     // Lancer le serveur HTTP
+    logrus.Info("[INFO] Web server started. Now listening on *:8080")
     log.Fatal(http.ListenAndServe(":8080", router))
 }
