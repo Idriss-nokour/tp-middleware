@@ -1,37 +1,52 @@
 package main
 
 import (
-    "log"
-    "net/http"
+   // "log"
+    //"net/http"
 	"middleware/example/internal/db"
-	"middleware/example/internal/api"
+	//"middleware/example/internal/api"
 	"middleware/example/internal/consumer"
-    "github.com/gorilla/mux"
-    "github.com/sirupsen/logrus"
+    //"middleware/example/internal/models"
+    //"github.com/gorilla/mux"
+    //"github.com/sirupsen/logrus"
+	//"encoding/json"
+	//"fmt"
+	//"github.com/nats-io/nats.go"
+    //"context"
+    //"github.com/zhashkevych/scheduler"
+    //"time"
+    /*"os"
+    "io"
+    "strconv"
+    "bufio"
+	"bytes"
+	"strings"
+    "os/signal"*/
 
 )
+
+
+
 
 func main() {
 
 	db.InitDB()
 
-	consumer.InitNats()
-
+	//consumer.InitNats()
+       // Initialisation de la connexion à NATS et du stream
+	consumer.InitStream()
 	// Dans cmd/main.go
 	consumer.RunMyConsumer()
 	
 	// Lancer le serveur HTTP principal
 	//runMyServer()  
-    // Initialisation du routeur
-    router := mux.NewRouter()
 
-    // Définition des routes
-    router.HandleFunc("/events", api.GetEvents).Methods("GET")
-    router.HandleFunc("/events", api.CreateEvent).Methods("POST")
-    router.HandleFunc("/events/{id}", api.UpdateEvent).Methods("PUT")
-    router.HandleFunc("/events/{id}", api.DeleteEvent).Methods("DELETE")
-
-    // Lancer le serveur HTTP
-    logrus.Info("[INFO] Web server started. Now listening on *:8080")
-    log.Fatal(http.ListenAndServe(":8080", router))
+ 
+    consumer.AlertScheduler()
+	// Appel de la fonction pour souscrire à un sujet (en écoute)
+	consumer.SubscribeToTopic()
+	
 }
+
+
+

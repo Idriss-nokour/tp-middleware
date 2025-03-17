@@ -2,6 +2,7 @@ package models
 
 import (
 	"github.com/gofrs/uuid"
+	"time"
 )
 
 type Alerts struct {

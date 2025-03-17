@@ -12,23 +12,65 @@ import (
 	"middleware/example/internal/models"
 	"middleware/example/internal/db"
     "fmt"
-    "bytes"
+    /*"bytes"
 	"embed"
 	"html/template"
 	"net/http"
-	"strings"
+	"strings"*/
 )
 
 var NatsConn *nats.Conn
+var jsc nats.JetStreamContext
+var nc   *nats.Conn
+
+// Fonction d'initialisation du stream NATS
+func InitStream() {
+	var err error
+
+	// Connect to a server
+	// create a nats connection
+	nc, err = nats.Connect(nats.DefaultURL)
+    if err != nil {
+        log.Fatal(err)
+    } 
+	// getting Jetstream context
+	jsc, err = nc.JetStream()
+	if err != nil {
+	 log.Fatal(err)
+	}
+ 
+	//Init stream
+	_, err = jsc.AddStream(&nats.StreamConfig{
+		 Name:     "ALERT",             // nom du stream
+		 Subjects: []string{"ALERT.>"}, // tous les sujets sont sous le format "USERS.*"
+	})
+	if err != nil {
+	 log.Fatal(err)
+	}
+}
+
+// Fonction pour souscrire à un sujet
+func SubscribeToTopic() {
+    // Simple Async Subscriber
+  nc.Subscribe("ALERT.>", func(m *nats.Msg) {
+   fmt.Printf("Received a message: %s\n", m.Subject)
+   if m.Subject == "ALERT.create" {
+      fmt.Println("received on USERS.create")
+      fmt.Println(string(m.Data))
+   }
+})
+}
 
 func InitNats() {
     var err error
+
     NatsConn, err = nats.Connect(nats.DefaultURL)  // Remplace par l'URL de ton serveur NATS
     if err != nil {
         log.Fatalf("Erreur de connexion à NATS: %v", err)
     }
     log.Println("Connecté à NATS")
 }
+
 
 // Dans consumer/consumer.go
 func RunMyConsumer() {
@@ -48,18 +90,18 @@ func RunMyConsumer() {
 // Création d'un consommateur Jetstream
 func EventConsumer() (*jetstream.Consumer, error) {
     
-    js, _ := jetstream.New(NatsConn)
+    js, _ := jetstream.New(nc)
     ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
     defer cancel()
 
     // getting Jetstream context
-   jsc, err := NatsConn.JetStream()
+   /*jsc, err := nc.JetStream()
    if err != nil {
     log.Fatal(err)
-   }
+   }*/
 
     // Vérifie si le flux "USERS" existe, sinon le crée
-    _, err = jsc.StreamInfo("USERS")
+    _, err := jsc.StreamInfo("USERS")
     if err != nil {
         // Si le flux n'existe pas, on le crée
         logrus.Infof("Flux 'USERS' introuvable. Création du flux...")
@@ -132,17 +174,6 @@ func Consume(consumer jetstream.Consumer) (err error) {
     return nil
 }
 
-// Modèle de l'événement
-/*type Event struct {
-    Uid             string    `json:"uid"`
-    Description     string    `json:"description"`
-    Localisation    string    `json:"localisation"`
-    Start           time.Time `json:"start"`
-    End             time.Time `json:"end"`
-    LastModificated time.Time `json:"lastmodificated"`
-    Type            string    `json:"type"`
-}*/
-
 // Processer les événements reçus et les enregistrer
 func processEvent(data []byte) error {
     // Parser le message JSON reçu en un événement structuré
@@ -193,7 +224,9 @@ func processEvent(data []byte) error {
                 Email:     "Abdou_Latif.KANE@etu.uca.fr", // Adapte cette adresse email en fonction des destinataires
                 EventType: event.Type,
             }
-
+            
+             // Afficher le contenu de l'alerte avant de l'enregistrer
+            logrus.Infof("Alerte à enregistrer: %+v", alert)
             // Enregistrer l'alerte dans la base de données
             err = db.CreateAlert(alert)
             if err != nil {
@@ -201,14 +234,13 @@ func processEvent(data []byte) error {
                 return err
             }
 
-            // Envoyer la notification via NATS ou un autre service
-            err = sendAlertNotification(alert)
+            // Publier l'alerte dans NATS
+            err = publishAlert("ALERT", alert)
             if err != nil {
-                logrus.Errorf("Erreur lors de l'envoi de la notification: %v", err)
+                logrus.Errorf("Erreur lors de la publication de l'alerte: %v", err)
                 return err
             }
 
-            logrus.Infof("Alerte envoyée pour l'événement modifié: %v", event.Uid)
         }
         return nil
     }
@@ -225,53 +257,84 @@ func processEvent(data []byte) error {
 }
 
 
-var embeddedTemplates embed.FS
+// Scheduler pour publier les alertes non envoyées
+func AlertScheduler() {
+    ticker := time.NewTicker(10 * time.Second) // Exécute toutes les 10 secondes
+    defer ticker.Stop()
 
-// Envoie la notification d'alerte par email
-func sendAlertNotification(alert models.Alert) error {
-	// Charger et analyser le template HTML
-	templatePath := "templates/alert_template.html" // Assurez-vous que ce chemin est correct
-	var tpl *template.Template
-	var err error
-	tpl, err = template.ParseFS(embeddedTemplates, templatePath)
-	if err != nil {
-		return fmt.Errorf("Erreur lors du parsing du template: %v", err)
-	}
+    for {
+        <-ticker.C
+        fmt.Println("Exécution du scheduler pour envoyer les alertes...")
 
-	// Préparer le contenu du message
-	var tplBuffer bytes.Buffer
-	err = tpl.Execute(&tplBuffer, alert)
-	if err != nil {
-		return fmt.Errorf("Erreur lors de l'exécution du template: %v", err)
-	}
+        // Récupérer les alertes non envoyées
+        alerts, err := db.GetUnsentAlerts()
+        if err != nil {
+            log.Printf("Erreur lors de la récupération des alertes: %v", err)
+            continue
+        }
 
-	// Créer le corps de l'email (HTML)
-	htmlContent := tplBuffer.String()
+        if len(alerts) == 0 {
+            fmt.Println("Aucune alerte à envoyer.")
+            continue
+        }
 
-	// Ici, nous utilisons l'API mail.edu.forestier.re pour l'envoi d'emails
-	// Assurez-vous d'avoir un token d'authentification et un endpoint correct
+        // Connexion à NATS
+        nc, err := nats.Connect(nats.DefaultURL)
+        if err != nil {
+            log.Printf("Erreur de connexion à NATS: %v", err)
+            continue
+        }
+        defer nc.Close()
 
-	// Exemple d'URL de l'API pour l'envoi d'un email
-	apiURL := "https://mail.edu.forestier.re/api/v1/sendmail"
-	reqBody := fmt.Sprintf(`{
-		"to": "%s",
-		"subject": "Alerte: %s",
-		"html": "%s"
-	}`, alert.Email, alert.EventType, htmlContent)
+        for _, alert := range alerts {
+            // Convertir l'alerte en JSON
+            alertJSON, err := json.Marshal(alert)
+            if err != nil {
+                log.Printf("Erreur lors de la conversion de l'alerte en JSON: %v", err)
+                continue
+            }
 
-	// Effectuer la requête HTTP POST vers l'API de l'envoi de mail
-	resp, err := http.Post(apiURL, "application/json", strings.NewReader(reqBody))
-	if err != nil {
-		log.Printf("Erreur lors de l'envoi de l'alerte: %v", err)
-		return err
-	}
-	defer resp.Body.Close()
+            // Publier sur NATS
+            err = nc.Publish("alerts", alertJSON)
+            if err != nil {
+                log.Printf("Erreur lors de la publication de l'alerte: %v", err)
+                continue
+            }
 
-	if resp.StatusCode != http.StatusOK {
-		log.Printf("Erreur lors de l'envoi de l'alerte, code HTTP: %d", resp.StatusCode)
-		return fmt.Errorf("erreur HTTP %d lors de l'envoi de l'alerte", resp.StatusCode)
-	}
+            fmt.Printf("Alerte envoyée: %+v\n", alert)
 
-	log.Printf("Alerte envoyée avec succès à %s", alert.Email)
-	return nil
+            // Marquer l'alerte comme envoyée
+            err = db.MarkAlertAsSent(alert.EventID)
+            if err != nil {
+                log.Printf("Erreur lors de la mise à jour de l'alerte: %v", err)
+            }
+        }
+    }
 }
+
+
+
+func publishAlert(subject string, alert models.Alert) error {
+    // Sérialiser l'événement en JSON
+    messageBytes, err := json.Marshal(alert)
+    if err != nil {
+        return fmt.Errorf("Erreur de sérialisation de l'alert: %v", err)
+    }
+
+    // Publier l'événement de manière asynchrone
+    pubAckFuture, err := jsc.PublishAsync(subject, messageBytes)
+    if err != nil {
+        return fmt.Errorf("Erreur lors de la publication de l'alert: %v", err)
+    }
+
+    // Attendre l'accusé de réception de la publication
+    select {
+    case <-pubAckFuture.Ok():
+        log.Println("Alert publié avec succès.")
+        return nil
+    case <-pubAckFuture.Err():
+        return fmt.Errorf("Erreur de publication: %v", pubAckFuture.Err())
+    }
+}
+
+

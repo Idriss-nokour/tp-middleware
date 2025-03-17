@@ -40,6 +40,20 @@ func InitDB() {
     }
 
     log.Println("Table 'events' recréée avec succès!")
+
+    // Création de la table alerts si elle n'existe pas
+    _, err = db.Exec(`CREATE TABLE IF NOT EXISTS alerts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id TEXT NOT NULL,
+        message TEXT NOT NULL,
+        email TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );`)
+    if err != nil {
+        log.Fatalf("Erreur lors de la création de la table alerts: %v", err)
+    }
 }
 
 func GetDB() *sql.DB {
@@ -152,14 +166,45 @@ func DeleteEvent(uid string) error {
 
 // Fonction pour créer une alerte dans la base de données avec sql.DB
 func CreateAlert(alert models.Alert) error {
-	
-	// Exécuter la requête avec les valeurs de l'alerte
-	_, err := db.Exec("INSERT INTO alerts (event_id, message, email, event_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)", alert.EventID, alert.Message, alert.Email, alert.EventType, time.Now(), time.Now())
-	if err != nil {
-		log.Printf("Erreur lors de la création de l'alerte: %v", err)
-		return err
-	}
+    now := time.Now()
+    _, err := db.Exec("INSERT INTO alerts (event_id, message, email, event_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)", 
+        alert.EventID, alert.Message, alert.Email, alert.EventType, now, now)
+    if err != nil {
+        log.Printf("Erreur lors de la création de l'alerte: %v", err)
+        return err
+    }
 
-	log.Printf("Alerte créée avec succès pour l'evenement: %v", alert.EventID)
-	return nil
+    log.Printf("Alerte créée avec succès pour l'événement: %v", alert.EventID)
+    return nil
 }
+
+
+// Récupérer les alertes non envoyées
+func GetUnsentAlerts() ([]models.Alert, error) {
+    rows, err := db.Query("SELECT event_id, message, email, event_type FROM alerts WHERE sent = 0")
+    if err != nil {
+        return nil, err
+    }
+    defer rows.Close()
+
+    var alerts []models.Alert
+    for rows.Next() {
+        var alert models.Alert
+        if err := rows.Scan(&alert.EventID, &alert.Message, &alert.Email, &alert.EventType); err != nil {
+            return nil, err
+        }
+        alerts = append(alerts, alert)
+    }
+
+    return alerts, nil
+}
+
+// Mettre à jour une alerte après l'envoi
+func MarkAlertAsSent(eventID string) error {
+    _, err := db.Exec("UPDATE alerts SET sent = 1 WHERE event_id = ?", eventID)
+    if err != nil {
+        log.Printf("Erreur lors de la mise à jour de l'alerte: %v", err)
+    }
+    return err
+}
+
