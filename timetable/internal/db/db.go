@@ -8,13 +8,11 @@ import (
    "time"
    "fmt" 
    "strings"
-   //"github.com/sirupsen/logrus"
 
 )
 
 var db *sql.DB
 
-// InitDB initialise la connexion à la base de données et crée la table si elle n'existe pas.
 func InitDB() {
     var err error
     db, err = sql.Open("sqlite3", "./events.db")
@@ -22,7 +20,6 @@ func InitDB() {
         log.Fatal(err)
     }
 
-    // Supprime la table existante et recrée-la avec le bon schéma
     createTableSQL := `DROP TABLE IF EXISTS events;
                        CREATE TABLE IF NOT EXISTS events (
                            uid TEXT PRIMARY KEY,
@@ -46,8 +43,6 @@ func InitDB() {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         event_id TEXT NOT NULL,
         message TEXT NOT NULL,
-        email TEXT NOT NULL,
-        event_type TEXT NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );`)
@@ -64,12 +59,11 @@ func GetEventByID(uid string) (*models.Event, error) {
     var event models.Event
     var startStr, endStr, lastModifiedStr string
 
-    // Modifie la requête pour récupérer les champs de date en tant que chaîne
     query := "SELECT uid, description, localisation, start, end, lastmodificated, type FROM events WHERE uid = ?"
     err := db.QueryRow(query, uid).Scan(&event.Uid, &event.Description, &event.Localisation, &startStr, &endStr, &lastModifiedStr, &event.Type)
     if err != nil {
         if err == sql.ErrNoRows {
-            return nil, nil // Événement non trouvé
+            return nil, nil 
         }
         return nil, err
     }
@@ -112,7 +106,6 @@ func GetAllEvents() ([]models.Event, error) {
         var event models.Event
         var startStr, endStr, lastModifiedStr string
 
-        // Scan the data, but for the date fields, we'll use string variables to convert later
         if err := rows.Scan(&event.Uid, &event.Description, &event.Localisation, &startStr, &endStr, &lastModifiedStr, &event.Type); err != nil {
             return nil, err
         }
@@ -136,7 +129,6 @@ func GetAllEvents() ([]models.Event, error) {
             return nil, err
         }
 
-        // Append the event to the list
         events = append(events, event)
     }
 
@@ -167,8 +159,8 @@ func DeleteEvent(uid string) error {
 // Fonction pour créer une alerte dans la base de données avec sql.DB
 func CreateAlert(alert models.Alert) error {
     now := time.Now()
-    _, err := db.Exec("INSERT INTO alerts (event_id, message, email, event_type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)", 
-        alert.EventID, alert.Message, alert.Email, alert.EventType, now, now)
+    _, err := db.Exec("INSERT INTO alerts (event_id, message, created_at, updated_at) VALUES (?, ?, ?, ?)", 
+        alert.EventID, alert.Message, now, now)
     if err != nil {
         log.Printf("Erreur lors de la création de l'alerte: %v", err)
         return err
@@ -178,6 +170,17 @@ func CreateAlert(alert models.Alert) error {
     return nil
 }
 
+func DeleteAllAlerts(db *sql.DB) error {
+	query := "DELETE FROM Alert"
+
+	_, err := db.Exec(query)
+	if err != nil {
+		return fmt.Errorf("erreur lors de la suppression des alertes : %v", err)
+	}
+
+	log.Println("Toutes les alertes ont été supprimées avec succès.")
+	return nil
+}
 
 // Récupérer les alertes non envoyées
 func GetUnsentAlerts() ([]models.Alert, error) {
@@ -190,7 +193,7 @@ func GetUnsentAlerts() ([]models.Alert, error) {
     var alerts []models.Alert
     for rows.Next() {
         var alert models.Alert
-        if err := rows.Scan(&alert.EventID, &alert.Message, &alert.Email, &alert.EventType); err != nil {
+        if err := rows.Scan(&alert.EventID, &alert.Message); err != nil {
             return nil, err
         }
         alerts = append(alerts, alert)

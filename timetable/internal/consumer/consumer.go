@@ -12,11 +12,7 @@ import (
 	"middleware/example/internal/models"
 	"middleware/example/internal/db"
     "fmt"
-    /*"bytes"
-	"embed"
-	"html/template"
-	"net/http"
-	"strings"*/
+    
 )
 
 var NatsConn *nats.Conn
@@ -41,8 +37,8 @@ func InitStream() {
  
 	//Init stream
 	_, err = jsc.AddStream(&nats.StreamConfig{
-		 Name:     "ALERT",             // nom du stream
-		 Subjects: []string{"ALERT.>"}, // tous les sujets sont sous le format "USERS.*"
+		 Name:     "ALERT",            
+		 Subjects: []string{"ALERT.>"}, 
 	})
 	if err != nil {
 	 log.Fatal(err)
@@ -51,7 +47,6 @@ func InitStream() {
 
 // Fonction pour souscrire à un sujet
 func SubscribeToTopic() {
-    // Simple Async Subscriber
   nc.Subscribe("ALERT.>", func(m *nats.Msg) {
    fmt.Printf("Received a message: %s\n", m.Subject)
    if m.Subject == "ALERT.create" {
@@ -64,7 +59,7 @@ func SubscribeToTopic() {
 func InitNats() {
     var err error
 
-    NatsConn, err = nats.Connect(nats.DefaultURL)  // Remplace par l'URL de ton serveur NATS
+    NatsConn, err = nats.Connect(nats.DefaultURL)  
     if err != nil {
         log.Fatalf("Erreur de connexion à NATS: %v", err)
     }
@@ -94,20 +89,13 @@ func EventConsumer() (*jetstream.Consumer, error) {
     ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
     defer cancel()
 
-    // getting Jetstream context
-   /*jsc, err := nc.JetStream()
-   if err != nil {
-    log.Fatal(err)
-   }*/
-
-    // Vérifie si le flux "USERS" existe, sinon le crée
     _, err := jsc.StreamInfo("USERS")
     if err != nil {
-        // Si le flux n'existe pas, on le crée
+
         logrus.Infof("Flux 'USERS' introuvable. Création du flux...")
         _, err = jsc.AddStream(&nats.StreamConfig{
             Name:     "USERS",
-            Subjects: []string{"event_subject"}, // Associer le sujet au flux
+            Subjects: []string{"event_subject"}, 
         })
         if err != nil {
             return nil, err
@@ -115,19 +103,15 @@ func EventConsumer() (*jetstream.Consumer, error) {
         logrus.Infof("Flux 'USERS' créé avec succès.")
     }
 
-    // get existing stream handle
     stream, err := js.Stream(ctx, "USERS")
     if err != nil {
         return nil, err
     }
 
-    // Créer un consommateur durable
 	consumerName := "consumer-" + uuid.New().String()
     
-    // getting durable consumer
     consumer, err := stream.Consumer(ctx, consumerName)
     if err != nil {
-        // if doesn't exist, create durable consumer
         consumer, err = stream.CreateConsumer(ctx, jetstream.ConsumerConfig{
             Durable:     consumerName,
             Name:        consumerName,
@@ -151,51 +135,43 @@ func EventConsumer() (*jetstream.Consumer, error) {
 func Consume(consumer jetstream.Consumer) (err error) {
     logrus.Info("Subscribing")
 
-    // consume messages from the consumer in callback
     cc, err := consumer.Consume(func(msg jetstream.Msg) {
-        // Traiter le message reçu dans le callback
-        logrus.Info(string(msg.Data())) // Optionnel : affiche les données du message
-        err := processEvent(msg.Data()) // Traiter l'événement
+        logrus.Info(string(msg.Data())) 
+        err := processEvent(msg.Data()) 
         if err != nil {
             logrus.Errorf("Erreur lors du traitement de l'événement: %v", err)
         }
-        // Accuser la réception du message
         _ = msg.Ack()
     })
 
-    // Important pour que le programme reste actif tant que la consommation n'est pas terminée
     if err != nil {
         return err
     }
 
-    <-cc.Closed() // Bloque jusqu'à ce que la connexion du consommateur soit fermée
-    cc.Stop()     // Arrête la consommation
+    <-cc.Closed() 
+    cc.Stop()     
 
     return nil
 }
 
 // Processer les événements reçus et les enregistrer
 func processEvent(data []byte) error {
-    // Parser le message JSON reçu en un événement structuré
     var event models.Event
     err := json.Unmarshal(data, &event)
     if err != nil {
         return err
     }
 
-    // Vérifier si l'événement existe déjà dans la base de données
     existingEvent, err := db.GetEventByID(event.Uid)
     if err != nil {
         logrus.Errorf("Erreur lors de la récupération de l'événement: %v", err)
         return err
     }
 
-    // Si l'événement existe déjà, vérifier s'il y a eu une modification
     if existingEvent != nil {
         isModified := false
         modificationDetails := ""
 
-        // Vérifier les modifications
         if !existingEvent.Start.Equal(event.Start) {
             modificationDetails += fmt.Sprintf("Horaire modifié: %s -> %s. ", existingEvent.Start, event.Start)
             isModified = true
@@ -213,29 +189,22 @@ func processEvent(data []byte) error {
             isModified = true
         }
 
-        // Si une modification a été détectée, créer une alerte
         if isModified {
-            // Créer une alerte pour cette modification
             var err error
 
             alert := models.Alert{
                 EventID:   event.Uid,
                 Message:   fmt.Sprintf("L'événement %s a été modifié. Détails des modifications: %s", event.Description, modificationDetails),
-                Email:     "Abdou_Latif.KANE@etu.uca.fr", // Adapte cette adresse email en fonction des destinataires
-                EventType: event.Type,
             }
             
-             // Afficher le contenu de l'alerte avant de l'enregistrer
             logrus.Infof("Alerte à enregistrer: %+v", alert)
-            // Enregistrer l'alerte dans la base de données
             err = db.CreateAlert(alert)
             if err != nil {
                 logrus.Errorf("Erreur lors de la création de l'alerte: %v", err)
                 return err
             }
 
-            // Publier l'alerte dans NATS
-            err = publishAlert("ALERT", alert)
+            err = publishAlert("alert_subject", alert)
             if err != nil {
                 logrus.Errorf("Erreur lors de la publication de l'alerte: %v", err)
                 return err
@@ -245,7 +214,6 @@ func processEvent(data []byte) error {
         return nil
     }
 
-    // Si l'événement n'existe pas, l'ajouter
     err = db.AddEvent(event)
     if err != nil {
         logrus.Errorf("Erreur lors de l'insertion de l'événement: %v", err)
@@ -259,7 +227,7 @@ func processEvent(data []byte) error {
 
 // Scheduler pour publier les alertes non envoyées
 func AlertScheduler() {
-    ticker := time.NewTicker(10 * time.Second) // Exécute toutes les 10 secondes
+    ticker := time.NewTicker(10 * time.Second) 
     defer ticker.Stop()
 
     for {
@@ -278,7 +246,6 @@ func AlertScheduler() {
             continue
         }
 
-        // Connexion à NATS
         nc, err := nats.Connect(nats.DefaultURL)
         if err != nil {
             log.Printf("Erreur de connexion à NATS: %v", err)

@@ -1,7 +1,7 @@
 package main
 
 import (
-   // "log"
+   //"log"
     //"net/http"
 	"middleware/example/internal/db"
 	//"middleware/example/internal/api"
@@ -31,7 +31,12 @@ import (
 func main() {
 
 	db.InitDB()
-
+	// Appel de la fonction de suppression
+	/*var err error
+	err = db.DeleteAllAlerts(db)
+	if err != nil {
+		log.Fatal(err)
+	}*/
 	//consumer.InitNats()
        // Initialisation de la connexion à NATS et du stream
 	consumer.InitStream()
@@ -47,6 +52,8 @@ func main() {
 	consumer.SubscribeToTopic()
 	
 }
+
+
 
 
 
