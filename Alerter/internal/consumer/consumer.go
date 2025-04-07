@@ -6,12 +6,26 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/sirupsen/logrus"
-	"log"
 	"time"
+	"bytes"
+	"embed"
+	"encoding/json"
+	"fmt"
+	"html/template"
+	"io"
+	"log"
+	"net/http"
+	"strings"
+	"github.com/adrg/frontmatter"
 )
 
 
 var NatsConn *nats.Conn
+
+var embeddedTemplates embed.FS
+
+
+
 
 func InitNats() {
     var err error
@@ -22,7 +36,6 @@ func InitNats() {
     log.Println("Connecté à NATS")
 }
 
-// Dans consumer/consumer.go
 func RunMyConsumer() {
 	consumer, err := AlertConsumer()
 	if err != nil {
@@ -38,7 +51,6 @@ func RunMyConsumer() {
 
 
 
-// Création d'un consommateur JetStream
 func AlertConsumer() (jetstream.Consumer, error) {
 	js, _ := jetstream.New(NatsConn)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -49,7 +61,6 @@ func AlertConsumer() (jetstream.Consumer, error) {
 		log.Fatal(err)
 	}
 
-	// Vérifie si le flux "ALERT" existe, sinon le crée
 	_, err = jsc.StreamInfo("ALERT")
 	if err != nil {
 		logrus.Infof("Flux 'ALERT' introuvable. Création du flux...")
@@ -63,13 +74,11 @@ func AlertConsumer() (jetstream.Consumer, error) {
 		logrus.Infof("✅ Flux 'ALERT' créé avec succès.")
 	}
 
-	// Récupération du stream existant
 	stream, err := js.Stream(ctx, "ALERT")
 	if err != nil {
 		return nil, err
 	}
 
-	// Création du consommateur durable
 	consumerName := "consumer-alerts"
 	consumer, err := stream.Consumer(ctx, consumerName)
 	if err != nil {
@@ -89,27 +98,110 @@ func AlertConsumer() (jetstream.Consumer, error) {
 	return consumer, nil
 }
 
-// Consommer les messages
-func Consume(consumer jetstream.Consumer) (err error) {
-    logrus.Info("Subscribing")
+type MailMatter struct {
+    Subject string `yaml:"subject"`
+}
 
-    // consume messages from the consumer in callback
-    cc, err := consumer.Consume(func(msg jetstream.Msg) {
-        // Traiter le message reçu dans le callback
-        logrus.Info(string(msg.Data())) // Optionnel : affiche les données du message
-      
-        if err := msg.Ack(); err != nil {
-			logrus.Errorf("Erreur lors de l'Ack du message: %v", err)
+
+func Consume(consumer jetstream.Consumer) error {
+	logrus.Info("Subscribing to alerts...")
+
+	cc, err := consumer.Consume(func(msg jetstream.Msg) {
+		var data map[string]interface{}
+		if err := json.Unmarshal(msg.Data(), &data); err != nil {
+			logrus.Errorf("Erreur de parsing du message : %v", err)
+			_ = msg.Nak()
+			return
 		}
-		
-    })
 
+		// Générer le contenu HTML depuis le template
+		htmlContent, mailMatter, err := GetStringFromEmbeddedTemplate("templates/alert.html", data)
+		if err != nil {
+			logrus.Errorf("Erreur de génération du template : %v", err)
+			_ = msg.Nak()
+			return
+		}
+
+		// TODO : à adapter selon ton modèle : récupérer l'adresse email à partir des données
+		email, ok := data["email"].(string)
+		if !ok || email == "" {
+			logrus.Error("Aucune adresse email valide trouvée dans les données")
+			_ = msg.Nak()
+			return
+		}
+
+		token := "knrujlZnwerWJXNWYuVTdgfUqomTFDvhMWuvjCsu" 
+		err = SendMail(email, mailMatter.Subject, htmlContent, token)
+		if err != nil {
+			logrus.Errorf("Erreur lors de l'envoi de l'email : %v", err)
+			_ = msg.Nak()
+			return
+		}
+
+		if err := msg.Ack(); err != nil {
+			logrus.Errorf("Erreur lors de l'Ack du message: %v", err)
+		} else {
+			logrus.Infof("✅ Message traité et mail envoyé à %s", email)
+		}
+	})
+
+	if err != nil {
+		return err
+	}
+
+	<-cc.Closed()
+	cc.Stop()
+	return nil
+}
+
+
+func GetStringFromEmbeddedTemplate(templatePath string, body interface{}) (content string, mailMatter MailMatter, err error) {
+    temp, err := template.ParseFS(embeddedTemplates, templatePath)
+    if err != nil {
+        return
+    }
+
+    var tpl bytes.Buffer
+    if err = temp.Execute(&tpl, body); err != nil {
+        return
+    }
+
+    var mailContent []byte
+    mailContent, err = frontmatter.Parse(strings.NewReader(tpl.String()), &mailMatter)
+    if err == nil {
+        content = string(mailContent)
+    }
+
+    return
+}
+
+func SendMail(to string, subject string, content string, token string) error {
+    payload := map[string]interface{}{
+        "to":      []string{to},
+        "subject": subject,
+        "content": content,
+    }
+
+    jsonBody, _ := json.Marshal(payload)
+    req, err := http.NewRequest("POST", "https://mail.edu.forestier.re/api/mail", bytes.NewBuffer(jsonBody))
     if err != nil {
         return err
     }
 
-    <-cc.Closed() 
-    cc.Stop()     
+    req.Header.Set("Authorization", "Bearer "+token)
+    req.Header.Set("Content-Type", "application/json")
+
+    client := &http.Client{}
+    resp, err := client.Do(req)
+    if err != nil {
+        return err
+    }
+    defer resp.Body.Close()
+
+    if resp.StatusCode >= 300 {
+        body, _ := io.ReadAll(resp.Body)
+        return fmt.Errorf("erreur envoi mail : %s", string(body))
+    }
 
     return nil
 }

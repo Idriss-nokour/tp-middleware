@@ -8,7 +8,6 @@ import (
 	"github.com/zhashkevych/scheduler"
 	"middleware/example/internal/schedule"
 
-
 )
 
 
